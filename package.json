@@ -1,17 +1,19 @@
 {
   "name": "nexa-backend",
   "version": "1.0.0",
-  "description": "Nexa Prop Trading Backend (local sqlite + JWT)",
+  "description": "Nexa Prop Trading Backend (SQLite + JWT)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
+    "axios": "^1.6.8",
     "bcrypt": "^5.1.1",
-    "better-sqlite3": "^8.4.0",
+    "better-sqlite3": "^8.0.1",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.0"
+    "jsonwebtoken": "^9.0.0",
+    "mailersend": "^2.1.0"
   }
 }
