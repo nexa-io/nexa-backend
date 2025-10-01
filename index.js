@@ -9,58 +9,69 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize SQLite database
 const db = new sqlite3.Database('nexa.db', (err) => {
-    if (err) console.error('Database connection error:', err);
-    else console.log('Connected to nexa.db');
+    if (err) {
+        console.error('Database connection error:', err);
+    } else {
+        console.log('Connected to SQLite database.');
+        db.run(`CREATE TABLE IF NOT EXISTS users (
+            email TEXT PRIMARY KEY,
+            password TEXT NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT,
+            address TEXT,
+            isAdmin INTEGER DEFAULT 0
+        )`);
+        db.run(`CREATE TABLE IF NOT EXISTS contracts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userEmail TEXT,
+            accountSize INTEGER,
+            challengeType TEXT,
+            contractStatus TEXT,
+            kycStatus TEXT,
+            contractExpiry TEXT,
+            payoutDate TEXT,
+            FOREIGN KEY(userEmail) REFERENCES users(email)
+        )`);
+        db.run(`CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userEmail TEXT,
+            message TEXT,
+            createdAt TEXT,
+            FOREIGN KEY(userEmail) REFERENCES users(email)
+        )`);
+    }
 });
 
-// Create tables if they don't exist
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        email TEXT PRIMARY KEY,
-        password TEXT NOT NULL,
-        name TEXT NOT NULL,
-        phone TEXT,
-        address TEXT,
-        isAdmin BOOLEAN DEFAULT 0
-    )`);
-    db.run(`CREATE TABLE IF NOT EXISTS contracts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        userEmail TEXT NOT NULL,
-        accountSize INTEGER NOT NULL,
-        challengeType TEXT NOT NULL,
-        contractStatus TEXT NOT NULL,
-        kycStatus TEXT NOT NULL,
-        contractExpiry TEXT NOT NULL,
-        payoutDate TEXT NOT NULL,
-        FOREIGN KEY (userEmail) REFERENCES users(email)
-    )`);
-});
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-// Middleware to verify JWT
-const authenticateToken = (req, res, next) => {
+const verifyToken = (req, res, next) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ message: 'No token provided' });
-    jwt.verify(token, 'your_jwt_secret', (err, user) => {
-        if (err) return res.status(403).json({ message: 'Invalid token' });
-        req.user = user;
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
         next();
-    });
+    } catch (err) {
+        res.status(401).json({ message: 'Invalid token' });
+    }
 };
 
-// Signup
-app.post('/signup', async (req, res) => {
-    const { name, email, password } = req.body;
+app.post('/register', async (req, res) => {
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) {
+        return res.status(400).json({ message: 'All fields are required' });
+    }
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         db.run(
-            `INSERT INTO users (email, password, name, isAdmin) VALUES (?, ?, ?, ?)`,
-            [email, hashedPassword, name, email === 'infocontactnexa@gmail.com' ? 1 : 0],
+            'INSERT INTO users (email, password, name, isAdmin) VALUES (?, ?, ?, ?)',
+            [email, hashedPassword, name, 0],
             (err) => {
-                if (err) return res.status(400).json({ message: 'User already exists' });
-                const token = jwt.sign({ email }, 'your_jwt_secret', { expiresIn: '1h' });
-                res.status(200).json({ token, user: { email, name } });
+                if (err) {
+                    return res.status(400).json({ message: 'User already exists' });
+                }
+                res.status(201).json({ message: 'User registered successfully' });
             }
         );
     } catch (err) {
@@ -68,135 +79,187 @@ app.post('/signup', async (req, res) => {
     }
 });
 
-// Login
-app.post('/login', async (req, res) => {
+app.post('/login', (req, res) => {
     const { email, password } = req.body;
-    db.get(`SELECT * FROM users WHERE email = ?`, [email], async (err, user) => {
-        if (err || !user) return res.status(400).json({ message: 'Invalid credentials' });
-        const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) return res.status(400).json({ message: 'Invalid credentials' });
-        const token = jwt.sign({ email }, 'your_jwt_secret', { expiresIn: '1h' });
-        res.status(200).json({ token, user: { email, name: user.name, isAdmin: user.isAdmin } });
-    });
-});
-
-// User Data
-app.get('/user-data', authenticateToken, (req, res) => {
-    db.get(`SELECT email, name, phone, address, isAdmin FROM users WHERE email = ?`, [req.user.email], (err, user) => {
-        if (err || !user) return res.status(404).json({ message: 'User not found' });
-        res.status(200).json({
-            name: user.name,
-            email: user.email,
-            phone: user.phone || 'Not set',
-            address: user.address || 'Not set',
-            isAdmin: user.isAdmin
-        });
-    });
-});
-
-// Check Admin
-app.get('/check-admin', authenticateToken, (req, res) => {
-    db.get(`SELECT isAdmin FROM users WHERE email = ?`, [req.user.email], (err, user) => {
-        if (err || !user || !user.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
-            return res.status(403).json({ message: 'Unauthorized' });
-        }
-        res.status(200).json({ success: true });
-    });
-});
-
-// Get User Contracts
-app.get('/contracts', authenticateToken, (req, res) => {
-    db.all(`SELECT * FROM contracts WHERE userEmail = ?`, [req.user.email], (err, contracts) => {
-        if (err) return res.status(500).json({ message: 'Error fetching contracts' });
-        res.status(200).json(contracts);
-    });
-});
-
-// Get All Contracts (Admin)
-app.get('/all-contracts', authenticateToken, (req, res) => {
-    db.get(`SELECT isAdmin FROM users WHERE email = ?`, [req.user.email], (err, user) => {
-        if (err || !user || !user.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
-            return res.status(403).json({ message: 'Unauthorized' });
-        }
-        db.all(`SELECT * FROM contracts`, [], (err, contracts) => {
-            if (err) return res.status(500).json({ message: 'Error fetching contracts' });
-            res.status(200).json(contracts);
-        });
-    });
-});
-
-// Add Contract
-app.post('/add-contract', authenticateToken, async (req, res) => {
-    const { userEmail, accountSize, challengeType, contractStatus, kycStatus, contractExpiry, payoutDate } = req.body;
-    try {
-        db.get(`SELECT isAdmin FROM users WHERE email = ?`, [req.user.email], (err, admin) => {
-            if (err || !admin || !admin.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
-                return res.status(403).json({ message: 'Unauthorized' });
-            }
-            db.get(`SELECT email FROM users WHERE email = ?`, [userEmail], (err, user) => {
-                if (err || !user) return res.status(404).json({ message: 'User not found' });
-                db.run(
-                    `INSERT INTO contracts (userEmail, accountSize, challengeType, contractStatus, kycStatus, contractExpiry, payoutDate) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [userEmail, accountSize, challengeType, contractStatus, kycStatus, contractExpiry, payoutDate],
-                    function (err) {
-                        if (err) return res.status(500).json({ message: 'Error adding contract' });
-                        res.status(200).json({ message: 'Contract added', contractId: this.lastID });
-                    }
-                );
-            });
-        });
-    } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+    if (!email || !password) {
+        return res.status(400).json({ message: 'All fields are required' });
     }
-});
-
-// Disable Contract
-app.post('/disable-contract', authenticateToken, (req, res) => {
-    const { contractId } = req.body;
-    db.get(`SELECT isAdmin FROM users WHERE email = ?`, [req.user.email], (err, admin) => {
-        if (err || !admin || !admin.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
-            return res.status(403).json({ message: 'Unauthorized' });
+    db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
+        if (err || !user) {
+            return res.status(401).json({ message: 'Invalid credentials' });
         }
-        db.run(`UPDATE contracts SET contractStatus = 'Disabled' WHERE id = ?`, [contractId], (err) => {
-            if (err) return res.status(500).json({ message: 'Error disabling contract' });
-            res.status(200).json({ message: 'Contract disabled' });
-        });
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
+        const token = jwt.sign({ email: user.email, isAdmin: user.isAdmin }, JWT_SECRET, { expiresIn: '1h' });
+        res.json({ token });
     });
 });
 
-// Send Contract Email
-app.post('/send-contract-email', authenticateToken, async (req, res) => {
-    const { userEmail } = req.body;
-    try {
-        await axios.post('https://api.mailersend.com/v1/email', {
-            from: { email: 'infocontactnexa@gmail.com' },
-            to: [{ email: userEmail }],
-            subject: 'Nexa Contract Details',
-            html: `Your contract has been added. Sign here: <a href="https://docuseal.com/d/w4aYAR5LfBb41G">Contract</a><br>Complete KYC: <a href="https://forms.gle/esMxwUYE3fMVG1qn6">KYC Form</a>`
-        }, {
-            headers: {
-                'Authorization': `Bearer mlsn.9d22578db1a5c02f535c13f03a433ea042d7615bd612594fe90b1f9afe3cefe2`
-            }
-        });
-        res.status(200).json({ message: 'Email sent' });
-    } catch (err) {
-        res.status(500).json({ message: 'Error sending email' });
-    }
+app.get('/user-data', verifyToken, (req, res) => {
+    db.get('SELECT email, name, phone, address, isAdmin FROM users WHERE email = ?', [req.user.email], (err, user) => {
+        if (err || !user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        res.json(user);
+    });
 });
 
-// Update Profile
-app.post('/update-profile', authenticateToken, (req, res) => {
+app.post('/update-profile', verifyToken, (req, res) => {
     const { phone, address } = req.body;
     db.run(
-        `UPDATE users SET phone = ?, address = ? WHERE email = ?`,
+        'UPDATE users SET phone = ?, address = ? WHERE email = ?',
         [phone, address, req.user.email],
         (err) => {
-            if (err) return res.status(500).json({ message: 'Error updating profile' });
-            res.status(200).json({ message: 'Profile updated' });
+            if (err) {
+                return res.status(500).json({ message: 'Failed to update profile' });
+            }
+            res.json({ message: 'Profile updated successfully' });
         }
     );
 });
 
-app.listen(process.env.PORT || 3000, () => {
-    console.log('Server running');
+app.get('/contracts', verifyToken, (req, res) => {
+    db.all('SELECT * FROM contracts WHERE userEmail = ?', [req.user.email], (err, contracts) => {
+        if (err) {
+            return res.status(500).json({ message: 'Failed to fetch contracts' });
+        }
+        res.json(contracts);
+    });
+});
+
+app.get('/all-contracts', verifyToken, (req, res) => {
+    if (!req.user.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    db.all('SELECT * FROM contracts', (err, contracts) => {
+        if (err) {
+            return res.status(500).json({ message: 'Failed to fetch contracts' });
+        }
+        res.json(contracts);
+    });
+});
+
+app.post('/add-contract', verifyToken, async (req, res) => {
+    if (!req.user.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { userEmail, accountSize, challengeType, contractStatus, kycStatus, contractExpiry, payoutDate } = req.body;
+    db.get('SELECT email FROM users WHERE email = ?', [userEmail], (err, user) => {
+        if (err || !user) {
+            return res.status(400).json({ message: 'User not found' });
+        }
+        db.run(
+            'INSERT INTO contracts (userEmail, accountSize, challengeType, contractStatus, kycStatus, contractExpiry, payoutDate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [userEmail, accountSize, challengeType, contractStatus, kycStatus, contractExpiry, payoutDate],
+            (err) => {
+                if (err) {
+                    return res.status(500).json({ message: 'Failed to add contract' });
+                }
+                res.json({ message: 'Contract added successfully' });
+            }
+        );
+    });
+});
+
+app.post('/disable-contract', verifyToken, (req, res) => {
+    if (!req.user.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { contractId } = req.body;
+    db.run('UPDATE contracts SET contractStatus = ? WHERE id = ?', ['Disabled', contractId], (err) => {
+        if (err) {
+            return res.status(500).json({ message: 'Failed to disable contract' });
+        }
+        res.json({ message: 'Contract disabled successfully' });
+    });
+});
+
+app.post('/update-kyc-status', verifyToken, (req, res) => {
+    if (!req.user.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { contractId, kycStatus } = req.body;
+    if (!['Not Submitted', 'Pending', 'Approved', 'Rejected'].includes(kycStatus)) {
+        return res.status(400).json({ message: 'Invalid KYC status' });
+    }
+    db.run('UPDATE contracts SET kycStatus = ? WHERE id = ?', [kycStatus, contractId], (err) => {
+        if (err) {
+            return res.status(500).json({ message: 'Failed to update KYC status' });
+        }
+        res.json({ message: 'KYC status updated successfully' });
+    });
+});
+
+app.post('/send-notification', verifyToken, async (req, res) => {
+    if (!req.user.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { userEmail, message } = req.body;
+    if (!userEmail || !message) {
+        return res.status(400).json({ message: 'User email and message are required' });
+    }
+    db.get('SELECT email FROM users WHERE email = ?', [userEmail], (err, user) => {
+        if (err || !user) {
+            return res.status(400).json({ message: 'User not found' });
+        }
+        const createdAt = new Date().toISOString();
+        db.run(
+            'INSERT INTO notifications (userEmail, message, createdAt) VALUES (?, ?, ?)',
+            [userEmail, message, createdAt],
+            (err) => {
+                if (err) {
+                    return res.status(500).json({ message: 'Failed to send notification' });
+                }
+                res.json({ message: 'Notification sent successfully' });
+            }
+        );
+    });
+});
+
+app.get('/get-notifications', verifyToken, (req, res) => {
+    db.all('SELECT id, message, createdAt FROM notifications WHERE userEmail = ?', [req.user.email], (err, notifications) => {
+        if (err) {
+            return res.status(500).json({ message: 'Failed to fetch notifications' });
+        }
+        res.json(notifications);
+    });
+});
+
+app.post('/send-contract-email', verifyToken, async (req, res) => {
+    if (!req.user.isAdmin || req.user.email !== 'infocontactnexa@gmail.com') {
+        return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { userEmail } = req.body;
+    const mailerSendApiKey = process.env.MAILERSEND_API_KEY || 'your_mailersend_api_key';
+    try {
+        await axios.post(
+            'https://api.mailersend.com/v1/email',
+            {
+                from: { email: 'infocontactnexa@gmail.com', name: 'Nexa' },
+                to: [{ email: userEmail }],
+                subject: 'New Contract Added - Nexa',
+                text: 'A new trading contract has been added to your Nexa dashboard. Log in to view details and start trading!',
+                html: '<p>A new trading contract has been added to your Nexa dashboard. Log in to view details and start trading!</p>'
+            },
+            { headers: { Authorization: `Bearer ${mailerSendApiKey}` } }
+        );
+        res.json({ message: 'Email sent successfully' });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to send email' });
+    }
+});
+
+app.get('/check-admin', verifyToken, (req, res) => {
+    if (req.user.isAdmin && req.user.email === 'infocontactnexa@gmail.com') {
+        res.json({ isAdmin: true });
+    } else {
+        res.status(403).json({ message: 'Admin access required' });
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
