@@ -30,8 +30,8 @@ const PAYSTACK_SECRET_KEY = 'sk_live_1f502564afb207534e3c0c940133fa910f01c946';
 // MailerSend Configuration (Placeholder: Replace with your MailerSend API setup)
 // Since a full MailerSend setup is complex (requires API calls, templates), 
 // I'm providing a placeholder function and the required email links.
-const MAILERSEND_API_KEY = 'YOUR_MAILERSEND_API_KEY'; // MUST replace
-const SENDER_EMAIL = 'support@mynexa.com'; // MUST replace with verified MailerSend domain email
+const MAILERSEND_API_KEY = 'mlsn.9d22578db1a5c02f535c13f03a433ea042d7615bd612594fe90b1f9afe3cefe2'; // MUST replace
+const SENDER_EMAIL = 'test-dnvo4d91ryng5r86.mlsender.net'; // MUST replace with verified MailerSend domain email
 
 // Document/Form Links
 const DOCUSEAL_CONTRACT_URL = 'https://docuseal.com/d/w4aYAR5LfBb41G';
