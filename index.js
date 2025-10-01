@@ -1,3 +1,4 @@
+```javascript
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
@@ -9,11 +10,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const db = new sqlite3.Database('nexa.db', (err) => {
+// Use persistent disk path for Render
+const db = new sqlite3.Database('/app/data/nexa.db', (err) => {
     if (err) {
-        console.error('Database connection error:', err);
+        console.error('Database connection error:', err.message);
     } else {
-        console.log('Connected to SQLite database.');
+        console.log('Connected to SQLite database at /app/data/nexa.db');
         db.run(`CREATE TABLE IF NOT EXISTS users (
             email TEXT PRIMARY KEY,
             password TEXT NOT NULL,
@@ -21,7 +23,9 @@ const db = new sqlite3.Database('nexa.db', (err) => {
             phone TEXT,
             address TEXT,
             isAdmin INTEGER DEFAULT 0
-        )`);
+        )`, (err) => {
+            if (err) console.error('Error creating users table:', err.message);
+        });
         db.run(`CREATE TABLE IF NOT EXISTS contracts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             userEmail TEXT,
@@ -32,14 +36,18 @@ const db = new sqlite3.Database('nexa.db', (err) => {
             contractExpiry TEXT,
             payoutDate TEXT,
             FOREIGN KEY(userEmail) REFERENCES users(email)
-        )`);
+        )`, (err) => {
+            if (err) console.error('Error creating contracts table:', err.message);
+        });
         db.run(`CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             userEmail TEXT,
             message TEXT,
             createdAt TEXT,
             FOREIGN KEY(userEmail) REFERENCES users(email)
-        )`);
+        )`, (err) => {
+            if (err) console.error('Error creating notifications table:', err.message);
+        });
     }
 });
 
@@ -53,6 +61,7 @@ const verifyToken = (req, res, next) => {
         req.user = decoded;
         next();
     } catch (err) {
+        console.error('Token verification error:', err.message);
         res.status(401).json({ message: 'Invalid token' });
     }
 };
@@ -69,28 +78,34 @@ app.post('/register', async (req, res) => {
             [email, hashedPassword, name, 0],
             (err) => {
                 if (err) {
-                    return res.status(400).json({ message: 'User already exists' });
+                    console.error('Register error:', err.message);
+                    return res.status(400).json({ message: 'User already exists or invalid data' });
                 }
                 res.status(201).json({ message: 'User registered successfully' });
             }
         );
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        console.error('Register server error:', err.message);
+        res.status(500).json({ message: 'Server error during registration' });
     }
 });
 
 app.post('/login', (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
-        return res.status(400).json({ message: 'All fields are required' });
+        return res.status(400).json({ message: 'Email and password are required' });
     }
     db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-        if (err || !user) {
-            return res.status(401).json({ message: 'Invalid credentials' });
+        if (err) {
+            console.error('Login database error:', err.message);
+            return res.status(500).json({ message: 'Server error during login' });
+        }
+        if (!user) {
+            return res.status(401).json({ message: 'User not found' });
         }
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials' });
+            return res.status(401).json({ message: 'Incorrect password' });
         }
         const token = jwt.sign({ email: user.email, isAdmin: user.isAdmin }, JWT_SECRET, { expiresIn: '1h' });
         res.json({ token });
@@ -99,7 +114,11 @@ app.post('/login', (req, res) => {
 
 app.get('/user-data', verifyToken, (req, res) => {
     db.get('SELECT email, name, phone, address, isAdmin FROM users WHERE email = ?', [req.user.email], (err, user) => {
-        if (err || !user) {
+        if (err) {
+            console.error('User data error:', err.message);
+            return res.status(500).json({ message: 'Server error fetching user data' });
+        }
+        if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
         res.json(user);
@@ -113,6 +132,7 @@ app.post('/update-profile', verifyToken, (req, res) => {
         [phone, address, req.user.email],
         (err) => {
             if (err) {
+                console.error('Update profile error:', err.message);
                 return res.status(500).json({ message: 'Failed to update profile' });
             }
             res.json({ message: 'Profile updated successfully' });
@@ -123,6 +143,7 @@ app.post('/update-profile', verifyToken, (req, res) => {
 app.get('/contracts', verifyToken, (req, res) => {
     db.all('SELECT * FROM contracts WHERE userEmail = ?', [req.user.email], (err, contracts) => {
         if (err) {
+            console.error('Contracts fetch error:', err.message);
             return res.status(500).json({ message: 'Failed to fetch contracts' });
         }
         res.json(contracts);
@@ -135,6 +156,7 @@ app.get('/all-contracts', verifyToken, (req, res) => {
     }
     db.all('SELECT * FROM contracts', (err, contracts) => {
         if (err) {
+            console.error('All contracts fetch error:', err.message);
             return res.status(500).json({ message: 'Failed to fetch contracts' });
         }
         res.json(contracts);
@@ -148,6 +170,7 @@ app.post('/add-contract', verifyToken, async (req, res) => {
     const { userEmail, accountSize, challengeType, contractStatus, kycStatus, contractExpiry, payoutDate } = req.body;
     db.get('SELECT email FROM users WHERE email = ?', [userEmail], (err, user) => {
         if (err || !user) {
+            console.error('Add contract user check error:', err?.message);
             return res.status(400).json({ message: 'User not found' });
         }
         db.run(
@@ -155,6 +178,7 @@ app.post('/add-contract', verifyToken, async (req, res) => {
             [userEmail, accountSize, challengeType, contractStatus, kycStatus, contractExpiry, payoutDate],
             (err) => {
                 if (err) {
+                    console.error('Add contract error:', err.message);
                     return res.status(500).json({ message: 'Failed to add contract' });
                 }
                 res.json({ message: 'Contract added successfully' });
@@ -170,6 +194,7 @@ app.post('/disable-contract', verifyToken, (req, res) => {
     const { contractId } = req.body;
     db.run('UPDATE contracts SET contractStatus = ? WHERE id = ?', ['Disabled', contractId], (err) => {
         if (err) {
+            console.error('Disable contract error:', err.message);
             return res.status(500).json({ message: 'Failed to disable contract' });
         }
         res.json({ message: 'Contract disabled successfully' });
@@ -186,6 +211,7 @@ app.post('/update-kyc-status', verifyToken, (req, res) => {
     }
     db.run('UPDATE contracts SET kycStatus = ? WHERE id = ?', [kycStatus, contractId], (err) => {
         if (err) {
+            console.error('Update KYC status error:', err.message);
             return res.status(500).json({ message: 'Failed to update KYC status' });
         }
         res.json({ message: 'KYC status updated successfully' });
@@ -202,6 +228,7 @@ app.post('/send-notification', verifyToken, async (req, res) => {
     }
     db.get('SELECT email FROM users WHERE email = ?', [userEmail], (err, user) => {
         if (err || !user) {
+            console.error('Send notification user check error:', err?.message);
             return res.status(400).json({ message: 'User not found' });
         }
         const createdAt = new Date().toISOString();
@@ -210,6 +237,7 @@ app.post('/send-notification', verifyToken, async (req, res) => {
             [userEmail, message, createdAt],
             (err) => {
                 if (err) {
+                    console.error('Send notification error:', err.message);
                     return res.status(500).json({ message: 'Failed to send notification' });
                 }
                 res.json({ message: 'Notification sent successfully' });
@@ -221,6 +249,7 @@ app.post('/send-notification', verifyToken, async (req, res) => {
 app.get('/get-notifications', verifyToken, (req, res) => {
     db.all('SELECT id, message, createdAt FROM notifications WHERE userEmail = ?', [req.user.email], (err, notifications) => {
         if (err) {
+            console.error('Get notifications error:', err.message);
             return res.status(500).json({ message: 'Failed to fetch notifications' });
         }
         res.json(notifications);
@@ -247,6 +276,7 @@ app.post('/send-contract-email', verifyToken, async (req, res) => {
         );
         res.json({ message: 'Email sent successfully' });
     } catch (err) {
+        console.error('Send contract email error:', err.message);
         res.status(500).json({ message: 'Failed to send email' });
     }
 });
@@ -263,3 +293,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+```
