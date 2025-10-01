@@ -1,16 +1,23 @@
 {
   "name": "nexa-backend",
   "version": "1.0.0",
+  "description": "Backend for Nexa prop trading platform",
   "main": "index.js",
-  "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
+    "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
-    "express": "^4.19.2",
+    "express": "^4.21.0",
     "jsonwebtoken": "^9.0.2",
     "sqlite3": "^5.1.7"
-  }
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  },
+  "author": "Nexa",
+  "license": "ISC"
 }
