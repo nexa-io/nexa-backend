@@ -12,6 +12,7 @@
     "cors": "^2.8.5",
     "bcrypt": "^5.1.1",
     "google-spreadsheet": "^4.1.1",
-    "axios": "^1.6.8"
+    "axios": "^1.6.8",
+    "mailersend": "^2.1.0"
   }
 }
