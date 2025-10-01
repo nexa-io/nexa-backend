@@ -1,417 +1,458 @@
-// index.js (Node.js/Express Backend) - Clean version with no duplicates
+// index.js - Nexa backend (SQLite + JWT + Paystack + MailerSend)
+// Full version (signup/login/dashboard/update-profile/payments/webhook)
+// WARNING: For production, move secrets to environment variables.
 
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
-const { GoogleSpreadsheet } = require('google-spreadsheet');
 const path = require('path');
 const axios = require('axios');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const Database = require('better-sqlite3');
 const { MailerSend, Sender, Recipient, EmailParams } = require('mailersend');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// --- CONFIGURATION & SECRETS ---
-// Note: In production, use process.env.VARIABLE_NAME for all secrets.
-const SPREADSHEET_ID = '1QXgtbL7V9HEsxOdVj8c4TvD3rOPWHD6EHl3c3KIPxvQ';
-const SHEET_NAME = 'Users';
-const CLIENT_EMAIL = 'nexa-service@nexa-database-473717.iam.gserviceaccount.com';
+// ----------------- CONFIG (HARD-CODED FOR TESTING) -----------------
+// Production: move all of these into process.env variables.
 
-const PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC8KF+HpVb+LYUy
-8XTO9qRO3sKZ2Kiy0h/BzXSGAICXbXsOtJEPLyuYPp5Ge8SOCkfrglWbI5oQpiar
-z7V3TFf72KcR9b9A07MCCnak3xoYSmxueGxGthnAibHhB7vRU7mCy3IN1ydmjPtX
-WCJMtUX04DErLG5aCbP8AC9myGyDXtblSOSDbz0q/5t2A3edc/7YtUt9iaogIhy7
-p2z9Pvis4LioFtG3+BC6Gax54+sbrsa15Ifa87safaw3a8A+IRST0B2g/sm23OYj
-fdE3Vok7UEYUQL+4up6aTeq0TJjDWTkGkVU6nVLXinxnclVrtJBnJuyY11pymaSz
-9xfpw1g1AgMBAAECggEAC25Se22ujsuaK4GizI4MZmQ/I1SXzyFX35DJUvjF1y1G
-DBspMuh1OA8Z04NiahSy0Np+s+miSv+lGswIJMLFF55ObBdncptJ5UZYdeS985rV
-4pI7VcJrZxiWb2rmXK2+9/S/LZsUIDVRcbl/f/SFVv6lzg8pdxvezOEAADkN6p8m
-NMnZ5UcPaxOLm2HLmy/vPyZFT2yne+qT/bZwYASdMbR/Nr5lcBPmJKrIXpg6Dj1q
-v9livE5NcWqhiMExao8XKY0zzr+X+TR1atDBTGs9J6GIjvfhgEIXooAiHvW8xn2v
-ST33ClFBMa8q9al9zrhQLE55gcM0hSSohYnoFsDk0QKBgQDjjwGAYzhTf/LHkpJ7
-ejtfp4gXfcLSItja0bvb+dzOOak15p1bOS7DTZnlgPthD/g0gNmgmuM86rSUXuFP
-15/qec1bGirHUbTKkD9f4qqgO6pMcxIHZHcQ8cYf+Vbi5B/yCulwqbTxIbGTICIS
-/a+rwp/xFJcTwgO365x4bd7XLQKBgQDTrLDb74tSl7sogiprV0ynnBHhG3WDbw5u
-a8XyZPSW5jNN8794lis+yrtQcq5v2MJe0QTzSy933xZp9gGq5RLQ4T6xrxWsw5Ts
-VMSXgx+8tMMOuBOGM04zklzdmHku9h29fOCd+0TO9JxFAnx/f6k2QrB3XsjC49G1
-/RUb/EuqKQKBgQDdTwI908E+6+u4jmLptmmy0KL5fbSQW5WdUmaqbFmDMu7O3gbh
-Zj6FcJ4gZw2Te01/+mQs3xXq87RFq/TiiqkbB/RhCpTaHit96UTJQw+AICbijPLW
-v61QjGKMTBllNkmfQ19+032HGaaymIirAY/ssq6MbuLzMzgckgct1GTpzQKBgQDC
-GdkT1NUtJ3W376R2SddA2xyKD6Py4iOZnbomS+z9cpoZISqyqQF+0uhxHLhYV6vk
-xkaD0q30fd1PzQY6b1SRtfqHdMWrZq1pCVI8nUC9CgTTungs118ea1g821REe+tJ
-lvlh5Mdz/1pM7bq8L5Q67WxkCcaO79mdyDVTNEcuAQKBgG5tr9ardC/Wp31YBqeZ
-ZQjogaBRUgcnRXXQj2CK9QiXEOAQFo+9EUa57+V8xT6VQUH8Kopoy+ulLy0cmud6
-XEtI3CtopUeHn8Ply23zRDkXdFCo1Ugn2oR8nF/qoBH4/2OQQpHNyEMVDdjTyobq
-+rJcqN/R/9r8YZnSLPeD/QRU
------END PRIVATE KEY-----`;
+// JWT
+const JWT_SECRET = 'nexa_super_secret_hardcoded_for_testing_pLEASE_change_me';
+const JWT_EXPIRES_IN = '24h'; // 24 hours
 
+// Paystack
 const PAYSTACK_SECRET_KEY = 'sk_live_1f502564afb207534e3c0c940133fa910f01c946';
 
+// MailerSend
 const MAILERSEND_API_KEY = 'mlsn.9d22578db1a5c02f535c13f03a433ea042d7615bd612594fe90b1f9afe3cefe2';
 const SENDER_EMAIL = 'test-dnvo4d91ryng5r86.mlsender.net';
 
+// Docuseal + KYC links
 const DOCUSEAL_CONTRACT_URL = 'https://docuseal.com/d/w4aYAR5LfBb41G';
 const KYC_FORM_URL = 'https://forms.gle/esMxwUYE3fMVG1qn6';
 
-// --- MIDDLEWARE SETUP ---
+// ----------------- MIDDLEWARE -----------------
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public'))); // If serving frontend from here
+app.use(express.static(path.join(__dirname, 'public')));
 
-// --- GOOGLE SHEETS SETUP ---
-const doc = new GoogleSpreadsheet(SPREADSHEET_ID);
+// ----------------- SQLITE DB (persistent local file nexa.db) -----------------
+const db = new Database(path.join(__dirname, 'nexa.db'));
 
-async function loadSheet() {
-    try {
-        await doc.useServiceAccountAuth({
-            client_email: CLIENT_EMAIL,
-            private_key: PRIVATE_KEY,
-        });
-        await doc.loadInfo(); 
-        return doc.sheetsByTitle[SHEET_NAME];
-    } catch (e) {
-        console.error('Error loading Google Sheet:', e);
-        throw new Error('Database connection failed.');
-    }
-}
+// Run simple migrations (create tables if not exists)
+db.exec(`
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    contractStatus TEXT DEFAULT 'Unsigned',
+    kycStatus TEXT DEFAULT 'Pending',
+    accountSize INTEGER DEFAULT 0,
+    contractExpiry TEXT DEFAULT 'N/A',
+    payoutDate TEXT DEFAULT 'N/A',
+    address TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    paystackReference TEXT DEFAULT '',
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
+CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference TEXT NOT NULL,
+    email TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    data TEXT,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+);
+`);
+
+// Prepare statements for performance
+const findUserByEmailStmt = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)');
+const insertUserStmt = db.prepare(`INSERT INTO users 
+    (name, email, password, contractStatus, kycStatus, accountSize, contractExpiry, payoutDate, address, phone, paystackReference)
+  VALUES (@name,@email,@password,@contractStatus,@kycStatus,@accountSize,@contractExpiry,@payoutDate,@address,@phone,@paystackReference)`);
+const updateUserStmt = db.prepare(`UPDATE users SET
+    name = COALESCE(@name, name),
+    password = COALESCE(@password, password),
+    contractStatus = COALESCE(@contractStatus, contractStatus),
+    kycStatus = COALESCE(@kycStatus, kycStatus),
+    accountSize = COALESCE(@accountSize, accountSize),
+    contractExpiry = COALESCE(@contractExpiry, contractExpiry),
+    payoutDate = COALESCE(@payoutDate, payoutDate),
+    address = COALESCE(@address, address),
+    phone = COALESCE(@phone, phone),
+    paystackReference = COALESCE(@paystackReference, paystackReference)
+  WHERE LOWER(email) = LOWER(@email)`);
+const createPaymentStmt = db.prepare('INSERT INTO payments (reference, email, amount, status, data) VALUES (?, ?, ?, ?, ?)');
+const getUserByEmailStmt = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)');
+
+// ----------------- MailerSend client -----------------
 const mailersend = new MailerSend({ apiKey: MAILERSEND_API_KEY });
 
 async function sendWelcomeEmail(recipientEmail, name) {
-    console.log(`[MAILER] Sending welcome email to ${recipientEmail}...`);
-    const emailBody = `
-        <p>Hello ${name},</p>
-        <p>Welcome to Nexa! Your trading journey starts now.</p>
-        <p><strong>IMPORTANT NEXT STEPS:</strong></p>
-        <ul>
-            <li><strong>Sign Contract:</strong> Complete your Trader Contract to comply with AML/CTF laws: <a href="${DOCUSEAL_CONTRACT_URL}">${DOCUSEAL_CONTRACT_URL}</a></li>
-            <li><strong>KYC Verification:</strong> Complete your Know Your Customer form: <a href="${KYC_FORM_URL}">${KYC_FORM_URL}</a></li>
-        </ul>
-        <p>You will also receive a contract link again if you purchase a challenge.</p>
-        <p>Happy trading,<br>The Nexa Team</p>
-    `;
+  // Non-blocking send, but we await it to get observable logs/errors.
+  const emailBody = `
+    <p>Hello ${name},</p>
+    <p>Welcome to Nexa! Your trading journey starts now.</p>
+    <p><strong>IMPORTANT NEXT STEPS:</strong></p>
+    <ul>
+      <li><strong>Sign Contract:</strong> Complete your Trader Contract to comply with AML/CTF laws: <a href="${DOCUSEAL_CONTRACT_URL}">${DOCUSEAL_CONTRACT_URL}</a></li>
+      <li><strong>KYC Verification:</strong> Complete your Know Your Customer form: <a href="${KYC_FORM_URL}">${KYC_FORM_URL}</a></li>
+    </ul>
+    <p>You will also receive a contract link again if you purchase a challenge.</p>
+    <p>Happy trading,<br>The Nexa Team</p>
+  `;
 
-    try {
-        const mailerSender = new Sender(SENDER_EMAIL, "Nexa Platform");
-        const mailerRecipients = [new Recipient(recipientEmail, name)];
-        
-        const emailParams = new EmailParams()
-            .setFrom(mailerSender)
-            .setTo(mailerRecipients)
-            .setSubject("Welcome to Nexa - Your Trading Journey Starts Here!")
-            .setHtml(emailBody);
+  try {
+    const mailerSender = new Sender(SENDER_EMAIL, "Nexa Platform");
+    const mailerRecipients = [new Recipient(recipientEmail, name)];
+    const emailParams = new EmailParams()
+      .setFrom(mailerSender)
+      .setTo(mailerRecipients)
+      .setSubject("Welcome to Nexa - Your Trading Journey Starts Here!")
+      .setHtml(emailBody);
 
-        await mailersend.email.send(emailParams);
-        console.log(`[MAILER] Email sent successfully to ${recipientEmail}.`);
-    } catch (error) {
-        console.error('[MAILER] Error sending email:', error);
-        // Don't fail the whole operation; log and continue
-    }
+    await mailersend.email.send(emailParams);
+    console.log(`[MAILER] Email sent to ${recipientEmail}`);
+  } catch (err) {
+    console.error('[MAILER] sending error:', err && err.message ? err.message : err);
+    // don't throw — keep signup flow working
+  }
 }
 
-// --- UTILITY FUNCTION: Find User ---
-async function findUserByEmail(sheet, email) {
-    const rows = await sheet.getRows();
-    return rows.find(row => row.Email.toLowerCase() === email.toLowerCase());
+// ----------------- Helpers -----------------
+function signToken(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
-// --- API ENDPOINTS ---
+function verifyTokenHeader(req) {
+  const auth = req.headers.authorization || req.headers.Authorization;
+  if (!auth) return null;
+  const parts = auth.split(' ');
+  if (parts.length !== 2) return null;
+  const scheme = parts[0];
+  const token = parts[1];
+  if (!/^Bearer$/i.test(scheme)) return null;
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (e) {
+    return null;
+  }
+}
+
+function calculateAccountSizeFromUSD(amountInUSD) {
+  let accountSize = 0;
+  if (amountInUSD >= 2 && amountInUSD <= 20) accountSize = 100;
+  else if (amountInUSD > 20 && amountInUSD <= 40) accountSize = 200;
+  else if (amountInUSD > 40 && amountInUSD <= 100) accountSize = 500;
+  else if (amountInUSD > 100) accountSize = 1000;
+  return accountSize;
+}
+
+// ----------------- API ENDPOINTS -----------------
 
 /**
- * @route POST /signup
- * @desc Register a new user and add to Google Sheet.
+ * POST /signup
+ * body: { name, email, password }
+ * returns: { token, user }
  */
 app.post('/signup', async (req, res) => {
+  try {
     const { name, email, password } = req.body;
-    if (!name || !email || !password) {
-        return res.status(400).json({ message: 'All fields are required.' });
-    }
+    if (!name || !email || !password) return res.status(400).json({ message: 'All fields are required.' });
 
-    try {
-        const sheet = await loadSheet();
-        const existingUser = await findUserByEmail(sheet, email);
+    // check existing
+    const existing = findUserByEmailStmt.get(email);
+    if (existing) return res.status(409).json({ message: 'User already exists.' });
 
-        if (existingUser) {
-            return res.status(409).json({ message: 'User already exists.' });
-        }
+    const hashed = await bcrypt.hash(password, 10);
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newRow = await sheet.addRow({
-            Name: name,
-            Email: email,
-            Password: hashedPassword,
-            ContractStatus: 'Unsigned',
-            KycStatus: 'Pending',
-            AccountSize: 0,
-            ContractExpiry: 'N/A',
-            PayoutDate: 'N/A',
-            Address: '',
-            Phone: '',
-            PaystackReference: ''
-        });
-        
-        await sendWelcomeEmail(email, name);
+    const info = {
+      name,
+      email,
+      password: hashed,
+      contractStatus: 'Unsigned',
+      kycStatus: 'Pending',
+      accountSize: 0,
+      contractExpiry: 'N/A',
+      payoutDate: 'N/A',
+      address: '',
+      phone: '',
+      paystackReference: ''
+    };
 
-        // Return the user data (excluding the hashed password)
-        const userData = { 
-            name: newRow.Name, 
-            email: newRow.Email, 
-            contractStatus: newRow.ContractStatus,
-            kycStatus: newRow.KycStatus,
-            accountSize: newRow.AccountSize
-        };
-        res.status(200).json(userData);
+    const insert = insertUserStmt.run(info);
+    // get stored user
+    const stored = getUserByEmailStmt.get(email);
 
-    } catch (error) {
-        console.error('Signup Error:', error);
-        res.status(500).json({ message: 'Server error during signup.' });
-    }
+    // send welcome email (fire and forget but awaited for logging)
+    sendWelcomeEmail(email, name).catch(() => {});
+
+    const token = signToken({ id: stored.id, email: stored.email, name: stored.name });
+
+    // return non-sensitive user fields
+    const user = {
+      id: stored.id,
+      name: stored.name,
+      email: stored.email,
+      contractStatus: stored.contractStatus,
+      kycStatus: stored.kycStatus,
+      accountSize: stored.accountSize,
+      contractExpiry: stored.contractExpiry,
+      payoutDate: stored.payoutDate,
+      address: stored.address,
+      phone: stored.phone
+    };
+
+    return res.status(200).json({ token, user });
+  } catch (err) {
+    console.error('Signup Error:', err && err.message ? err.message : err);
+    return res.status(500).json({ message: 'Server error during signup.' });
+  }
 });
 
 /**
- * @route POST /login
- * @desc Authenticate a user.
+ * POST /login
+ * body: { email, password }
+ * returns: { token, user }
  */
 app.post('/login', async (req, res) => {
+  try {
     const { email, password } = req.body;
-    if (!email || !password) {
-        return res.status(400).json({ message: 'Email and password are required.' });
-    }
+    if (!email || !password) return res.status(400).json({ message: 'Email and password are required.' });
 
-    try {
-        const sheet = await loadSheet();
-        const userRow = await findUserByEmail(sheet, email);
+    const row = findUserByEmailStmt.get(email);
+    if (!row) return res.status(401).json({ message: 'Invalid email or password.' });
 
-        if (!userRow) {
-            return res.status(401).json({ message: 'Invalid email or password.' });
-        }
+    const match = await bcrypt.compare(password, row.password);
+    if (!match) return res.status(401).json({ message: 'Invalid email or password.' });
 
-        const match = await bcrypt.compare(password, userRow.Password);
+    const token = signToken({ id: row.id, email: row.email, name: row.name });
 
-        if (match) {
-            // Return user data for the dashboard (excluding the password)
-            const userData = { 
-                name: userRow.Name, 
-                email: userRow.Email, 
-                contractStatus: userRow.ContractStatus,
-                kycStatus: userRow.KycStatus,
-                accountSize: userRow.AccountSize,
-                contractExpiry: userRow.ContractExpiry,
-                payoutDate: userRow.PayoutDate
-            };
-            res.status(200).json(userData);
-        } else {
-            res.status(401).json({ message: 'Invalid email or password.' });
-        }
+    const user = {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      contractStatus: row.contractStatus,
+      kycStatus: row.kycStatus,
+      accountSize: row.accountSize,
+      contractExpiry: row.contractExpiry,
+      payoutDate: row.payoutDate,
+      address: row.address,
+      phone: row.phone
+    };
 
-    } catch (error) {
-        console.error('Login Error:', error);
-        res.status(500).json({ message: 'Server error during login.' });
-    }
+    return res.status(200).json({ token, user });
+  } catch (err) {
+    console.error('Login Error:', err && err.message ? err.message : err);
+    return res.status(500).json({ message: 'Server error during login.' });
+  }
 });
 
 /**
- * @route POST /user-data
- * @desc Get user data (used by dashboard to refresh).
+ * POST /user-data
+ * Accepts either Authorization: Bearer <token> OR body { email }
+ * returns: user object
  */
 app.post('/user-data', async (req, res) => {
-    const { email } = req.body;
-    if (!email) {
-        return res.status(400).json({ message: 'Email is required.' });
+  try {
+    // Try token first
+    const verified = verifyTokenHeader(req);
+    let email;
+    if (verified && verified.email) {
+      email = verified.email;
+    } else {
+      // fallback to body
+      email = req.body.email;
     }
 
-    try {
-        const sheet = await loadSheet();
-        const userRow = await findUserByEmail(sheet, email);
+    if (!email) return res.status(400).json({ message: 'Email is required.' });
 
-        if (!userRow) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
+    const row = getUserByEmailStmt.get(email);
+    if (!row) return res.status(404).json({ message: 'User not found.' });
 
-        // Return all necessary dashboard data
-        const userData = { 
-            name: userRow.Name, 
-            email: userRow.Email, 
-            contractStatus: userRow.ContractStatus,
-            kycStatus: userRow.KycStatus,
-            accountSize: userRow.AccountSize,
-            contractExpiry: userRow.ContractExpiry,
-            payoutDate: userRow.PayoutDate,
-            address: userRow.Address,
-            phone: userRow.Phone
-        };
-        res.status(200).json(userData);
+    const user = {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      contractStatus: row.contractStatus,
+      kycStatus: row.kycStatus,
+      accountSize: row.accountSize,
+      contractExpiry: row.contractExpiry,
+      payoutDate: row.payoutDate,
+      address: row.address,
+      phone: row.phone
+    };
 
-    } catch (error) {
-        console.error('User Data Fetch Error:', error);
-        res.status(500).json({ message: 'Server error fetching user data.' });
-    }
+    return res.status(200).json(user);
+  } catch (err) {
+    console.error('User Data Fetch Error:', err && err.message ? err.message : err);
+    return res.status(500).json({ message: 'Server error fetching user data.' });
+  }
 });
 
 /**
- * @route POST /update-profile
- * @desc Update user profile details (Address, Phone).
+ * POST /update-profile
+ * body: { email, address, phone }
  */
 app.post('/update-profile', async (req, res) => {
+  try {
     const { email, address, phone } = req.body;
-    if (!email) {
-        return res.status(400).json({ message: 'Email is required.' });
+    if (!email) return res.status(400).json({ message: 'Email is required.' });
+
+    const row = getUserByEmailStmt.get(email);
+    if (!row) return res.status(404).json({ message: 'User not found.' });
+
+    // Basic phone validation (if provided)
+    if (phone && !/^\+?\d{7,15}$/.test(phone)) {
+      return res.status(400).json({ message: 'Invalid phone format.' });
     }
 
-    try {
-        const sheet = await loadSheet();
-        const userRow = await findUserByEmail(sheet, email);
+    updateUserStmt.run({
+      email,
+      address: address || row.address,
+      phone: phone || row.phone
+    });
 
-        if (!userRow) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
+    const updated = getUserByEmailStmt.get(email);
 
-        userRow.Address = address || '';
-        userRow.Phone = phone || '';
-
-        await userRow.save();
-
-        res.status(200).json({ message: 'Profile updated successfully.' });
-
-    } catch (error) {
-        console.error('Profile Update Error:', error);
-        res.status(500).json({ message: 'Server error during profile update.' });
-    }
+    return res.status(200).json({ message: 'Profile updated successfully.', user: {
+      id: updated.id, name: updated.name, email: updated.email,
+      contractStatus: updated.contractStatus, kycStatus: updated.kycStatus,
+      accountSize: updated.accountSize, contractExpiry: updated.contractExpiry,
+      payoutDate: updated.payoutDate, address: updated.address, phone: updated.phone
+    }});
+  } catch (err) {
+    console.error('Profile Update Error:', err && err.message ? err.message : err);
+    return res.status(500).json({ message: 'Server error during profile update.' });
+  }
 });
 
 /**
- * @route POST /paystack-webhook
- * @desc Handle Paystack transaction verification.
- * NOTE: Configure this URL in your Paystack Dashboard.
+ * POST /verify-payment
+ * body: { reference, email }
+ * Verifies Paystack transaction, updates user account size and records payment in DB
+ */
+app.post('/verify-payment', async (req, res) => {
+  try {
+    const { reference, email } = req.body;
+    if (!reference || !email) return res.status(400).json({ message: 'Missing transaction reference or user email.' });
+
+    // Call Paystack verify API
+    const paystackResponse = await axios.get(`https://api.paystack.co/transaction/verify/${reference}`, {
+      headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` }
+    });
+
+    const transaction = paystackResponse.data && paystackResponse.data.data;
+    if (!transaction || transaction.status !== 'success') {
+      return res.status(402).json({ message: 'Payment verification failed or transaction not successful.' });
+    }
+
+    // Calculate amount in USD (if your flow uses NGN, adjust accordingly)
+    // Paystack returns amount in kobo (for NGN) or cents (if currency USD) — this code assumes amount is in kobo and we convert to USD at 1:100? 
+    // To keep the previous behavior: transaction.amount / 100 / 100
+    const amountInUSD = (transaction.amount || 0) / 100 / 100;
+    const accountSize = calculateAccountSizeFromUSD(amountInUSD);
+
+    // Update user
+    const userRow = getUserByEmailStmt.get(email);
+    if (!userRow) return res.status(404).json({ message: 'User not found.' });
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30); // 30-day expiry
+
+    updateUserStmt.run({
+      email,
+      accountSize,
+      contractStatus: 'Unsigned',
+      contractExpiry: expiryDate.toISOString().split('T')[0],
+      payoutDate: 'Monthly',
+      paystackReference: reference
+    });
+
+    // record payment
+    createPaymentStmt.run(reference, email, transaction.amount || 0, transaction.status || 'success', JSON.stringify(transaction));
+
+    // send contract email again
+    sendWelcomeEmail(email, userRow.name).catch(() => {});
+
+    return res.status(200).json({ message: 'Payment verified and account updated successfully.' });
+  } catch (err) {
+    console.error('Verify Payment Error:', err && err.response ? err.response.data || err.response.statusText : err && err.message ? err.message : err);
+    if (err.response && err.response.status === 404) {
+      return res.status(404).json({ message: 'Transaction not found.' });
+    }
+    return res.status(500).json({ message: 'Server error during payment verification.' });
+  }
+});
+
+/**
+ * POST /paystack-webhook
+ * Paystack will call this endpoint. We verify signature and process charge.success events.
  */
 app.post('/paystack-webhook', async (req, res) => {
-    // Paystack Signature Verification (essential for security)
-    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY).update(JSON.stringify(req.body)).digest('hex');
-    if (hash !== req.headers['x-paystack-signature']) {
-        return res.status(401).send('Unauthorized');
-    }
-    
-    const event = req.body;
+  try {
+    const signature = req.headers['x-paystack-signature'] || '';
+    const computed = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY).update(JSON.stringify(req.body)).digest('hex');
 
-    // We only care about successful transaction events
+    if (computed !== signature) {
+      console.warn('Invalid Paystack signature');
+      return res.status(401).send('Unauthorized');
+    }
+
+    const event = req.body;
     if (event.event !== 'charge.success') {
-        return res.status(200).send('Event received but not relevant to charge success.');
+      return res.status(200).send('Event received but not relevant.');
     }
 
     const { reference, customer, amount } = event.data;
-    const customerEmail = customer.email;
-    const amountInUSD = amount / 100 / 100; // Paystack sends in kobo/cents; adjust for USD if needed
+    const customerEmail = (customer && customer.email) || event.data.customer.email;
 
-    console.log(`[PAYSTACK WEBHOOK] Success for Reference: ${reference}, Email: ${customerEmail}, Amount: ${amountInUSD}`);
+    // Use same conversion as verify-payment
+    const amountInUSD = (amount || 0) / 100 / 100;
+    const accountSize = calculateAccountSizeFromUSD(amountInUSD);
 
-    try {
-        const sheet = await loadSheet();
-        const userRow = await findUserByEmail(sheet, customerEmail);
-
-        if (!userRow) {
-            console.error(`[PAYSTACK WEBHOOK] User not found for email: ${customerEmail}`);
-            return res.status(404).send('User not found.');
-        }
-
-        // Determine Account Size based on amount
-        let accountSize = 0;
-        if (amountInUSD >= 2 && amountInUSD <= 20) accountSize = 100;
-        else if (amountInUSD > 20 && amountInUSD <= 40) accountSize = 200; 
-        else if (amountInUSD > 40 && amountInUSD <= 100) accountSize = 500;
-        else if (amountInUSD > 100) accountSize = 1000;
-
-        // Update User Data
-        userRow.AccountSize = accountSize;
-        userRow.ContractStatus = 'Unsigned'; // Reset to prompt contract signing
-        userRow.PaystackReference = reference;
-        const today = new Date();
-        const expiryDate = new Date(today);
-        expiryDate.setDate(today.getDate() + 30); // Default 30-day expiry
-        
-        userRow.ContractExpiry = expiryDate.toISOString().split('T')[0];
-        userRow.PayoutDate = 'Monthly';
-
-        await userRow.save();
-        
-        // Send contract email again after purchase
-        await sendWelcomeEmail(customerEmail, userRow.Name);
-
-        res.status(200).send('Webhook received and spreadsheet updated.');
-
-    } catch (error) {
-        console.error('Paystack Webhook Error:', error);
-        res.status(500).send('Server error processing webhook.');
+    // find user
+    const userRow = getUserByEmailStmt.get(customerEmail);
+    if (!userRow) {
+      console.error(`User not found for email ${customerEmail}`);
+      return res.status(404).send('User not found.');
     }
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30);
+
+    updateUserStmt.run({
+      email: customerEmail,
+      accountSize,
+      contractStatus: 'Unsigned',
+      contractExpiry: expiryDate.toISOString().split('T')[0],
+      payoutDate: 'Monthly',
+      paystackReference: reference
+    });
+
+    createPaymentStmt.run(reference, customerEmail, amount || 0, 'success', JSON.stringify(event.data));
+
+    // send contract email
+    sendWelcomeEmail(customerEmail, userRow.name).catch(() => {});
+
+    return res.status(200).send('Webhook processed.');
+  } catch (err) {
+    console.error('Paystack Webhook Error:', err && err.message ? err.message : err);
+    return res.status(500).send('Server error processing webhook.');
+  }
 });
 
-/**
- * @route POST /verify-payment
- * @desc Verify Paystack transaction (for frontend-initiated verification).
- */
-app.post('/verify-payment', async (req, res) => {
-    const { reference, email } = req.body;
-    if (!reference || !email) {
-        return res.status(400).json({ message: 'Missing transaction reference or user email.' });
-    }
+// Simple health endpoint
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-    try {
-        // Verify transaction with Paystack
-        const paystackResponse = await axios.get(`https://api.paystack.co/transaction/verify/${reference}`, {
-            headers: {
-                Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            },
-        });
-
-        const transaction = paystackResponse.data.data;
-        if (transaction.status !== 'success') {
-            return res.status(402).json({ message: 'Payment verification failed or transaction not successful.' });
-        }
-
-        // Update sheet similar to webhook
-        const sheet = await loadSheet();
-        const userRow = await findUserByEmail(sheet, email);
-
-        if (!userRow) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
-
-        const amountInUSD = transaction.amount / 100 / 100;
-        let accountSize = 0;
-        if (amountInUSD >= 2 && amountInUSD <= 20) accountSize = 100;
-        else if (amountInUSD > 20 && amountInUSD <= 40) accountSize = 200; 
-        else if (amountInUSD > 40 && amountInUSD <= 100) accountSize = 500;
-        else if (amountInUSD > 100) accountSize = 1000;
-
-        userRow.AccountSize = accountSize;
-        userRow.ContractStatus = 'Unsigned';
-        userRow.PaystackReference = reference;
-        const today = new Date();
-        const expiryDate = new Date(today);
-        expiryDate.setDate(today.getDate() + 30);
-        
-        userRow.ContractExpiry = expiryDate.toISOString().split('T')[0];
-        userRow.PayoutDate = 'Monthly';
-
-        await userRow.save();
-        
-        await sendWelcomeEmail(email, userRow.Name);
-
-        res.status(200).json({ message: 'Payment verified and account updated successfully.' });
-
-    } catch (error) {
-        console.error('Verify Payment Error:', error);
-        if (error.response && error.response.status === 404) {
-            return res.status(404).json({ message: 'Transaction not found.' });
-        }
-        res.status(500).json({ message: 'Server error during payment verification.' });
-    }
-});
-
-// Start the server
+// Start server
 app.listen(port, () => {
-    console.log(`Nexa Backend listening on port ${port}`);
-    console.log(`Paystack Webhook URL: https://nexa-backend-3wxt.onrender.com/paystack-webhook`);
+  console.log(`Nexa Backend listening on port ${port}`);
+  console.log(`DB path: ${path.join(__dirname, 'nexa.db')}`);
 });
