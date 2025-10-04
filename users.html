@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-S1BR5R2947"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-S1BR5R2947');
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Users Database - Nexa</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --pink: #db2777;
+      --pink-light: #f9a8d4;
+      --gray-dark: #1f2937;
+      --gray-medium: #4b5563;
+      --gray-light: #f3f4f6;
+      --bg-gradient: linear-gradient(to bottom right, #fce7f3, #fff);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Montserrat', sans-serif;
+      margin: 0;
+      background: var(--bg-gradient);
+      min-height: 100vh;
+      padding: 2rem;
+      color: var(--gray-dark);
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .card {
+      background: white;
+      border-radius: 1.5rem;
+      padding: 2rem;
+      box-shadow: 0 8px 16px rgb(219 39 119 / 0.15);
+      margin-bottom: 2rem;
+      transition: transform 0.3s ease;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+    }
+    .card h2 {
+      font-weight: 700;
+      font-size: 1.8rem;
+      color: var(--pink);
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid var(--pink-light);
+      padding-bottom: 0.5rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+    th, td {
+      padding: 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--pink-light);
+    }
+    th {
+      background: var(--pink-light);
+      color: var(--pink);
+      font-weight: 700;
+    }
+    tr:hover {
+      background: #fff0f6;
+    }
+    .no-data {
+      text-align: center;
+      color: var(--gray-medium);
+      font-size: 1.1rem;
+      padding: 2rem;
+    }
+    .login-container {
+      max-width: 400px;
+      margin: 5rem auto;
+    }
+    .login-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .login-form input {
+      padding: 0.75rem;
+      border: 1px solid var(--pink-light);
+      border-radius: 0.5rem;
+      font-family: 'Montserrat', sans-serif;
+    }
+    .login-form button {
+      background: var(--pink);
+      color: white;
+      padding: 0.75rem;
+      border: none;
+      border-radius: 9999px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.2s ease;
+    }
+    .login-form button:hover {
+      background: #be185d;
+      transform: scale(1.05);
+    }
+    .error-message {
+      color: red;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+    @media (max-width: 768px) {
+      body { padding: 1rem; }
+      th, td { padding: 0.75rem; font-size: 0.9rem; }
+      .login-container { margin: 2rem auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loginContainer" class="login-container card" style="display: none;">
+    <h2>Admin Login</h2>
+    <form id="loginForm" class="login-form">
+      <input type="email" id="adminEmail" placeholder="Enter email" required />
+      <input type="password" id="adminPassword" placeholder="Enter password" required />
+      <button type="submit">Login</button>
+      <p id="errorMessage" class="error-message" style="display: none;"></p>
+    </form>
+  </div>
+  <div id="usersContainer" class="container" style="display: none;">
+    <div class="card">
+      <h2>Users Database</h2>
+      <table id="usersTable">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Name</th>
+            <th>Total Contracts</th>
+            <th>Active Contracts</th>
+            <th>Pending KYC</th>
+            <th>Unread Notifications</th>
+          </tr>
+        </thead>
+        <tbody id="usersTableBody"></tbody>
+      </table>
+      <div id="noData" class="no-data" style="display: none;">No user data available</div>
+    </div>
+  </div>
+  <script>
+    // Hardcoded admin credentials (not secure for production)
+    const ADMIN_EMAIL = 'mikenkan001@gmail.com';
+    const ADMIN_PASSWORD = 'Strika001$';
+    const SESSION_KEY = 'admin_session';
+
+    // Check if admin is authenticated
+    function isAuthenticated() {
+      return localStorage.getItem(SESSION_KEY) === 'true';
+    }
+
+    // Show login form or users table based on authentication
+    function initializePage() {
+      const loginContainer = document.getElementById('loginContainer');
+      const usersContainer = document.getElementById('usersContainer');
+      if (isAuthenticated()) {
+        loginContainer.style.display = 'none';
+        usersContainer.style.display = 'block';
+        loadUsers();
+      } else {
+        loginContainer.style.display = 'block';
+        usersContainer.style.display = 'none';
+      }
+    }
+
+    // Handle login form submission
+    document.getElementById('loginForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const email = document.getElementById('adminEmail').value;
+      const password = document.getElementById('adminPassword').value;
+      const errorMessage = document.getElementById('errorMessage');
+
+      if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+        localStorage.setItem(SESSION_KEY, 'true');
+        document.getElementById('loginContainer').style.display = 'none';
+        document.getElementById('usersContainer').style.display = 'block';
+        loadUsers();
+        errorMessage.style.display = 'none';
+      } else {
+        errorMessage.textContent = 'Invalid email or password';
+        errorMessage.style.display = 'block';
+      }
+    });
+
+    // Load user data from localStorage
+    function loadUsers() {
+      const dataStore = JSON.parse(localStorage.getItem('nexa_data') || '{}');
+      const usersTableBody = document.getElementById('usersTableBody');
+      const noDataDiv = document.getElementById('noData');
+
+      // Check if users exist in dataStore
+      if (!dataStore.users || Object.keys(dataStore.users).length === 0) {
+        noDataDiv.style.display = 'block';
+        usersTableBody.style.display = 'none';
+        return;
+      }
+
+      noDataDiv.style.display = 'none';
+      usersTableBody.style.display = 'table-row-group';
+
+      // Clear table body
+      usersTableBody.innerHTML = '';
+
+      // Populate table with user data
+      Object.values(dataStore.users).forEach(user => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${user.email || 'N/A'}</td>
+          <td>${user.name || 'N/A'}</td>
+          <td>${user.contracts?.length || 0}</td>
+          <td>${user.contracts?.filter(c => c.status === 'active').length || 0}</td>
+          <td>${user.pendingKyc || 0}</td>
+          <td>${user.notifications?.filter(n => !n.read).length || 0}</td>
+        `;
+        usersTableBody.appendChild(row);
+      });
+    }
+
+    // Initialize page on load
+    window.onload = initializePage;
+  </script>
+</body>
+  </html>
