@@ -702,6 +702,9 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
+import os
+import asyncio
+
 def main():
     # Initialize database
     init_database()
@@ -709,7 +712,7 @@ def main():
     # Create application
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Conversation handler for order process
+    # Add all your handlers
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -726,7 +729,6 @@ def main():
         fallbacks=[CommandHandler('cancel', cancel)],
     )
     
-    # Add handlers
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('test', test_notification))
     application.add_handler(CommandHandler('verify', verify_payment))
@@ -734,29 +736,24 @@ def main():
     application.add_handler(CommandHandler('deletecode', delete_discount_code))
     application.add_handler(CommandHandler('codes', list_discount_codes))
     application.add_handler(CommandHandler('orders', list_orders))
+    application.add_handler(CommandHandler('status', status))
     application.add_error_handler(error_handler)
     
-    # Start the bot
     print("🤖 Nexa Bot is starting...")
-    print("✅ Discount code system enabled")
-    print("✅ Telegram notifications with fallbacks")
-    print("✅ Admin commands ready")
-    application.run_polling()
+    
+    # Use webhooks for Render
+    if 'RENDER' in os.environ:
+        # Webhook mode for production
+        webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{BOT_TOKEN}"
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=int(os.environ.get('PORT', 5000)),
+            url_path=BOT_TOKEN,
+            webhook_url=webhook_url
+        )
+    else:
+        # Polling mode for local development
+        application.run_polling()
 
 if __name__ == '__main__':
     main()
-    
-if __name__ == '__main__':
-    # For Render deployment
-    port = int(os.environ.get('PORT', 5000))
-    print(f"🤖 Bot starting on port {port}...")
-    
-    # Initialize and start bot
-    init_database()
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Add all your handlers here...
-    # [YOUR EXISTING HANDLER SETUP CODE]
-    
-    print("✅ Bot is running on Render!")
-    application.run_polling()   
